@@ -73,10 +73,10 @@
         map.on('locationfound', onLocationFound);
         map.on('locationerror', onLocationError);
         navigator.geolocation.getCurrentPosition(
-        position => console.log("Геолокация разрешена:", position),
-        error => console.error("Ошибка геолокации:", error),
-        { enableHighAccuracy: true });
-
+            position => console.log("Геолокация разрешена:", position),
+            error => console.error("Ошибка геолокации:", error),
+            { enableHighAccuracy: true }
+        );
         map.locate({setView: true, maxZoom: 16, watch: true});
         
         function checkHexVisit(latlng) {
