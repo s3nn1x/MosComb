@@ -12,3 +12,18 @@ document.getElementById("tg-login").addEventListener("click", () => {
         alert("Ошибка входа. Попробуйте ещё раз.");
     }
 });
+
+function getLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                onLocationFound({ latlng: L.latLng(position.coords.latitude, position.coords.longitude) });
+            },
+            () => {
+                alert("Геолокация недоступна. Проверьте настройки браузера.");
+            }
+        );
+    } else {
+        alert("Геолокация не поддерживается этим устройством.");
+    }
+}
