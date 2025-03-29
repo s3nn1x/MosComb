@@ -3,73 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Геолокация на карте</title>
+    <title>Игра на карте</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background: #f0f0f0; }
+        body, html { margin: 0; padding: 0; height: 100%; background: #1e1e1e; }
         #map { width: 100%; height: 100vh; }
-        #error { color: red; padding: 10px; text-align: center; }
+        #error { color: red; padding: 10px; background: #fff; display: none; }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <div id="error" style="display: none;"></div>
+    <div id="error"></div>
     
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // Инициализация карты
-        const map = L.map('map').setView([55.751244, 37.618423], 12); // Москва по умолчанию
+        const bounds = [[55.1, 36.5], [56.0, 38.2]];
+        const map = L.map('map', {
+            maxBounds: bounds,
+            maxBoundsViscosity: 1.0
+        }).setView([55.751244, 37.618423], 12);
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
         }).addTo(map);
 
-        let userMarker; // Переменная для маркера
-
-        // Функция, которая обновляет местоположение пользователя на карте
-        function updateLocation(lat, lng) {
-            if (userMarker) {
-                map.removeLayer(userMarker); // Удаляем старый маркер
+        // Маска Москвы
+        const moscowBorder = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [36.5, 56.0], [38.2, 56.0], [38.2, 55.1], [36.5, 55.1], [36.5, 56.0]
+                ]]
             }
+        };
 
-            const userLocation = L.latLng(lat, lng);
-            userMarker = L.marker(userLocation).addTo(map)
-                .bindPopup("Вы здесь!")
-                .openPopup();
-            map.setView(userLocation, 16); // Центрируем карту на текущем местоположении
+        const worldBorder = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [-180, 90], [180, 90], [180, -90], [-180, -90], [-180, 90]
+                ]]
+            }
+        };
+
+        const mask = turf.difference(worldBorder, moscowBorder);
+
+        L.geoJSON(mask, {
+            style: { color: '#000', weight: 1, fillColor: '#000', fillOpacity: 0.7 }
+        }).addTo(map);
+
+        // Генерация шестиугольников
+        const bbox = [36.5, 55.1, 38.2, 56.0];
+        const cellSize = 0.5;
+        const hexGrid = turf.hexGrid(bbox, cellSize, { units: 'kilometers' });
+
+        let visitedHexes = new Set(JSON.parse(localStorage.getItem('visitedHexes')) || []);
+
+        let hexLayer = L.geoJSON(hexGrid, {
+            style: feature => ({
+                color: '#aaa', weight: 0.5, 
+                fillColor: visitedHexes.has(feature.properties.id) ? '#0f0' : 'transparent',
+                fillOpacity: visitedHexes.has(feature.properties.id) ? 0.5 : 0.3
+            })
+        }).addTo(map);
+
+        // Функция для обновления геолокации
+        function updateLocation(position) {
+            const userLocation = L.latLng(position.coords.latitude, position.coords.longitude);
+            map.setView(userLocation, 16);
+            L.marker(userLocation).addTo(map).bindPopup("Вы здесь!").openPopup();
+            checkHexVisit(userLocation);
         }
 
-        // Функция для обработки ошибок
-        function showError(message) {
-            const errorDiv = document.getElementById("error");
-            errorDiv.textContent = message;
-            errorDiv.style.display = "block";
+        // Функция для проверки посещения шестиугольников
+        function checkHexVisit(latlng) {
+            hexGrid.features.forEach(hex => {
+                if (turf.booleanPointInPolygon([latlng.lng, latlng.lat], hex) && !visitedHexes.has(hex.properties.id)) {
+                    visitedHexes.add(hex.properties.id);
+                    localStorage.setItem('visitedHexes', JSON.stringify([...visitedHexes]));
+                    L.geoJSON(hex, {
+                        style: { color: '#0f0', weight: 0.5, fillColor: '#0f0', fillOpacity: 0.5 }
+                    }).addTo(map);
+                }
+            });
         }
 
-        // Функция для отслеживания геолокации пользователя
-        function startTrackingLocation() {
+        // Обновление геолокации каждые 3 секунды
+        setInterval(() => {
             if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(
-                    (position) => {
-                        const { latitude, longitude } = position.coords;
-                        updateLocation(latitude, longitude);
-                    },
-                    (error) => {
-                        showError("Не удалось получить вашу геолокацию. Пожалуйста, разрешите доступ к местоположению.");
-                    },
-                    {
-                        enableHighAccuracy: true, // Высокая точность
-                        timeout: 10000,            // Тайм-аут 10 секунд
-                        maximumAge: 5000          // Максимум 5 секунд для использования старых данных
-                    }
-                );
+                navigator.geolocation.getCurrentPosition(updateLocation, (error) => {
+                    alert("Не удалось получить вашу геолокацию.");
+                });
             } else {
-                showError("Геолокация не поддерживается этим устройством.");
+                alert("Геолокация не поддерживается этим устройством.");
             }
-        }
+        }, 3000);  // Обновление каждые 3 секунды
 
-        // Начинаем отслеживание геолокации
-        startTrackingLocation();
     </script>
 </body>
 </html>
