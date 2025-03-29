@@ -3,128 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Игра на карте</title>
+    <title>Геолокация на карте</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background: #1e1e1e; }
+        body, html { margin: 0; padding: 0; height: 100%; background: #f0f0f0; }
         #map { width: 100%; height: 100vh; }
+        #error { color: red; padding: 10px; text-align: center; }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <button id="tg-login">Войти через Telegram</button>
-
+    <div id="error" style="display: none;"></div>
+    
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
     <script>
-        const bounds = [[55.1, 36.5], [56.0, 38.2]];
-        const map = L.map('map', {
-            maxBounds: bounds,
-            maxBoundsViscosity: 1.0
-        }).setView([55.751244, 37.618423], 12);
+        // Инициализация карты
+        const map = L.map('map').setView([55.751244, 37.618423], 12); // Москва по умолчанию
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
         }).addTo(map);
 
-        const moscowBorder = {
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [36.5, 56.0], [38.2, 56.0], [38.2, 55.1], [36.5, 55.1], [36.5, 56.0]
-                ]]
+        let userMarker; // Переменная для маркера
+
+        // Функция, которая обновляет местоположение пользователя на карте
+        function updateLocation(lat, lng) {
+            if (userMarker) {
+                map.removeLayer(userMarker); // Удаляем старый маркер
             }
-        };
 
-        const worldBorder = {
-            "type": "Feature",
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [-180, 90], [180, 90], [180, -90], [-180, -90], [-180, 90]
-                ]]
-            }
-        };
-
-        const mask = turf.difference(worldBorder, moscowBorder);
-
-        L.geoJSON(mask, {
-            style: { color: '#000', weight: 1, fillColor: '#000', fillOpacity: 0.7 }
-        }).addTo(map);
-
-        const bbox = [36.5, 55.1, 38.2, 56.0];
-        const cellSize = 0.5;
-        const hexGrid = turf.hexGrid(bbox, cellSize, { units: 'kilometers' });
-        
-        let visitedHexes = new Set(JSON.parse(localStorage.getItem('visitedHexes')) || []);
-
-        let hexLayer = L.geoJSON(hexGrid, {
-            style: feature => ({
-                color: '#aaa', weight: 0.5, 
-                fillColor: visitedHexes.has(feature.properties.id) ? '#0f0' : 'transparent',
-                fillOpacity: visitedHexes.has(feature.properties.id) ? 0.5 : 0.3
-            })
-        }).addTo(map);
-
-        function checkHexVisit(latlng) {
-            hexGrid.features.forEach(hex => {
-                if (turf.booleanPointInPolygon([latlng.lng, latlng.lat], hex) && !visitedHexes.has(hex.properties.id)) {
-                    visitedHexes.add(hex.properties.id);
-                    localStorage.setItem('visitedHexes', JSON.stringify([...visitedHexes]));
-                    L.geoJSON(hex, {
-                        style: { color: '#0f0', weight: 0.5, fillColor: '#0f0', fillOpacity: 0.5 }
-                    }).addTo(map);
-                }
-            });
+            const userLocation = L.latLng(lat, lng);
+            userMarker = L.marker(userLocation).addTo(map)
+                .bindPopup("Вы здесь!")
+                .openPopup();
+            map.setView(userLocation, 16); // Центрируем карту на текущем местоположении
         }
 
-        let watchId;
+        // Функция для обработки ошибок
+        function showError(message) {
+            const errorDiv = document.getElementById("error");
+            errorDiv.textContent = message;
+            errorDiv.style.display = "block";
+        }
+
+        // Функция для отслеживания геолокации пользователя
         function startTrackingLocation() {
             if (navigator.geolocation) {
-                watchId = navigator.geolocation.watchPosition(
+                navigator.geolocation.watchPosition(
                     (position) => {
-                        const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
-                        onLocationFound(latlng);
+                        const { latitude, longitude } = position.coords;
+                        updateLocation(latitude, longitude);
                     },
                     (error) => {
-                        alert("Ошибка при получении геолокации: " + error.message);
+                        showError("Не удалось получить вашу геолокацию. Пожалуйста, разрешите доступ к местоположению.");
                     },
-                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                    {
+                        enableHighAccuracy: true, // Высокая точность
+                        timeout: 10000,            // Тайм-аут 10 секунд
+                        maximumAge: 5000          // Максимум 5 секунд для использования старых данных
+                    }
                 );
             } else {
-                alert("Геолокация не поддерживается этим устройством.");
+                showError("Геолокация не поддерживается этим устройством.");
             }
         }
 
-        function onLocationFound(latlng) {
-            L.marker(latlng).addTo(map).bindPopup("Вы здесь!").openPopup();
-            checkHexVisit(latlng);
-        }
-
+        // Начинаем отслеживание геолокации
         startTrackingLocation();
-        
-        function stopTrackingLocation() {
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
-            }
-        }
-
-        document.getElementById("tg-login").addEventListener("click", () => {
-            const tg = window.Telegram.WebApp;
-            tg.expand();
-            const user = tg.initDataUnsafe.user;
-            
-            if (user) {
-                console.log("Пользователь вошел:", user);
-                localStorage.setItem("tgUserId", user.id);
-                alert(`Привет, ${user.first_name}!`);
-                location.reload();
-            } else {
-                alert("Ошибка входа. Попробуйте ещё раз.");
-            }
-        });
     </script>
 </body>
 </html>
