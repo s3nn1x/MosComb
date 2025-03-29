@@ -71,18 +71,23 @@
         function updateLocation(position) {
             const userLocation = L.latLng(position.coords.latitude, position.coords.longitude);
             map.setView(userLocation, 16);
+
             L.marker(userLocation).addTo(map).bindPopup("Вы здесь!").openPopup();
-            checkHexVisit(userLocation);
+
+            checkHexVisit(userLocation); 
         }
 
         function checkHexVisit(latlng) {
             hexGrid.features.forEach(hex => {
-                if (turf.booleanPointInPolygon([latlng.lng, latlng.lat], hex) && !visitedHexes.has(hex.properties.id)) {
-                    visitedHexes.add(hex.properties.id);
-                    localStorage.setItem('visitedHexes', JSON.stringify([...visitedHexes]));
-                    L.geoJSON(hex, {
-                        style: { color: '#0f0', weight: 0.5, fillColor: '#0f0', fillOpacity: 0.5 }
-                    }).addTo(map);
+                if (turf.booleanPointInPolygon([latlng.lng, latlng.lat], hex)) {
+                    if (!visitedHexes.has(hex.properties.id)) {
+                        visitedHexes.add(hex.properties.id);
+                        localStorage.setItem('visitedHexes', JSON.stringify([...visitedHexes]));
+
+                        L.geoJSON(hex, {
+                            style: { color: '#0f0', weight: 0.5, fillColor: '#0f0', fillOpacity: 0.5 }
+                        }).addTo(map);
+                    }
                 }
             });
         }
@@ -95,7 +100,7 @@
             } else {
                 alert("Геолокация не поддерживается этим устройством.");
             }
-        }, 3000); 
+        }, 3000);  
 
     </script>
 </body>
