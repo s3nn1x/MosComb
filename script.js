@@ -1,29 +1,31 @@
-document.getElementById("tg-login").addEventListener("click", () => {
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    const user = tg.initDataUnsafe.user;
-    
-    if (user) {
-        console.log("Пользователь вошел:", user);
-        localStorage.setItem("tgUserId", user.id);
-        alert(`Привет, ${user.first_name}!`);
-        location.reload();
-    } else {
-        alert("Ошибка входа. Попробуйте ещё раз.");
-    }
-});
+let watchId;
 
-function getLocation() {
+function startTrackingLocation() {
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        watchId = navigator.geolocation.watchPosition(
             (position) => {
-                onLocationFound({ latlng: L.latLng(position.coords.latitude, position.coords.longitude) });
+                const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+                onLocationFound(latlng);
             },
-            () => {
-                alert("Геолокация недоступна. Проверьте настройки браузера.");
-            }
+            (error) => {
+                alert("ошибка при получении геолокации: " + error.message);
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
     } else {
-        alert("Геолокация не поддерживается этим устройством.");
+        alert("геолокация не поддерживается этим устройством.");
+    }
+}
+
+function onLocationFound(latlng) {
+    L.marker(latlng).addTo(map).bindPopup("вы здесь!").openPopup();
+    checkHexVisit(latlng);
+}
+
+startTrackingLocation();
+
+function stopTrackingLocation() {
+    if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
     }
 }

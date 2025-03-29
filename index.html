@@ -12,164 +12,119 @@
     </style>
 </head>
 <body>
-    <button onclick="getLocation()">Получить геолокацию</button>
     <div id="map"></div>
-    
+    <button id="tg-login">Войти через Telegram</button>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        let userId = tg.initDataUnsafe?.user?.id || null;
-        let visitedHexes = new Set();
-
         const bounds = [[55.1, 36.5], [56.0, 38.2]];
         const map = L.map('map', {
             maxBounds: bounds,
             maxBoundsViscosity: 1.0
         }).setView([55.751244, 37.618423], 12);
-        
+
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        const moscowBorder = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [36.5, 56.0], [38.2, 56.0], [38.2, 55.1], [36.5, 55.1], [36.5, 56.0]
+                ]]
+            }
+        };
+
+        const worldBorder = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [-180, 90], [180, 90], [180, -90], [-180, -90], [-180, 90]
+                ]]
+            }
+        };
+
+        const mask = turf.difference(worldBorder, moscowBorder);
+
+        L.geoJSON(mask, {
+            style: { color: '#000', weight: 1, fillColor: '#000', fillOpacity: 0.7 }
         }).addTo(map);
 
         const bbox = [36.5, 55.1, 38.2, 56.0];
         const cellSize = 0.5;
         const hexGrid = turf.hexGrid(bbox, cellSize, { units: 'kilometers' });
         
-        function loadVisitedHexes() {
-            if (userId) {
-                visitedHexes = new Set(JSON.parse(localStorage.getItem(`visitedHexes_${userId}`)) || []);
-            }
-            redrawHexes();
-        }
+        let visitedHexes = new Set(JSON.parse(localStorage.getItem('visitedHexes')) || []);
 
-        function redrawHexes() {
-            L.geoJSON(hexGrid, {
-                style: feature => ({
-                    color: '#aaa', weight: 0.5, 
-                    fillColor: visitedHexes.has(JSON.stringify(feature.geometry.coordinates)) ? '#0f0' : 'transparent',
-                    fillOpacity: visitedHexes.has(JSON.stringify(feature.geometry.coordinates)) ? 0.5 : 0.1
-                })
-            }).addTo(map);
-        }
+        let hexLayer = L.geoJSON(hexGrid, {
+            style: feature => ({
+                color: '#aaa', weight: 0.5, 
+                fillColor: visitedHexes.has(feature.properties.id) ? '#0f0' : 'transparent',
+                fillOpacity: visitedHexes.has(feature.properties.id) ? 0.5 : 0.3
+            })
+        }).addTo(map);
 
-        const customIcon = L.icon({
-            iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-            iconSize: [32, 32],
-            iconAnchor: [16, 32],
-            popupAnchor: [0, -32]
-        });
-        
-        function onLocationFound(e) {
-            L.marker(e.latlng, { icon: customIcon }).addTo(map)
-                .bindPopup("Вы здесь!").openPopup();
-            checkHexVisit(e.latlng);
-        }
-        
-        function onLocationError() {
-            alert("Не удалось получить вашу геолокацию.");
-        }
-        
-        map.on('locationfound', onLocationFound);
-        map.on('locationerror', onLocationError);
-        navigator.geolocation.getCurrentPosition(
-            position => console.log("Геолокация разрешена:", position),
-            error => console.error("Ошибка геолокации:", error),
-            { enableHighAccuracy: true }
-        );
-        map.locate({setView: true, maxZoom: 16, watch: true});
-        
         function checkHexVisit(latlng) {
             hexGrid.features.forEach(hex => {
-                const hexId = JSON.stringify(hex.geometry.coordinates);
-                if (turf.booleanPointInPolygon(turf.point([latlng.lng, latlng.lat]), hex) && !visitedHexes.has(hexId)) {
-                    visitedHexes.add(hexId);
-                    localStorage.setItem(`visitedHexes_${userId}`, JSON.stringify([...visitedHexes]));
-                    redrawHexes();
+                if (turf.booleanPointInPolygon([latlng.lng, latlng.lat], hex) && !visitedHexes.has(hex.properties.id)) {
+                    visitedHexes.add(hex.properties.id);
+                    localStorage.setItem('visitedHexes', JSON.stringify([...visitedHexes]));
+                    L.geoJSON(hex, {
+                        style: { color: '#0f0', weight: 0.5, fillColor: '#0f0', fillOpacity: 0.5 }
+                    }).addTo(map);
                 }
             });
         }
 
-        if (userId) {
-            loadVisitedHexes();
+        let watchId;
+        function startTrackingLocation() {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const latlng = L.latLng(position.coords.latitude, position.coords.longitude);
+                        onLocationFound(latlng);
+                    },
+                    (error) => {
+                        alert("Ошибка при получении геолокации: " + error.message);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+                );
+            } else {
+                alert("Геолокация не поддерживается этим устройством.");
+            }
         }
+
+        function onLocationFound(latlng) {
+            L.marker(latlng).addTo(map).bindPopup("Вы здесь!").openPopup();
+            checkHexVisit(latlng);
+        }
+
+        startTrackingLocation();
+        
+        function stopTrackingLocation() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+        }
+
+        document.getElementById("tg-login").addEventListener("click", () => {
+            const tg = window.Telegram.WebApp;
+            tg.expand();
+            const user = tg.initDataUnsafe.user;
+            
+            if (user) {
+                console.log("Пользователь вошел:", user);
+                localStorage.setItem("tgUserId", user.id);
+                alert(`Привет, ${user.first_name}!`);
+                location.reload();
+            } else {
+                alert("Ошибка входа. Попробуйте ещё раз.");
+            }
+        });
     </script>
 </body>
 </html>
-<!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
- <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-         <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-          <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-           <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-            <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-             <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-              <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-               <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                 <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                         <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
- <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-         <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-          <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-           <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-            <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-             <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-              <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-               <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                 <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                         <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
- <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-         <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-          <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-           <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-            <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-             <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-              <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-               <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                 <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                  <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                   <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                    <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                     <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                      <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                       <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                        <!-- ЯНГ ФИМОЗИК НАА МЕСТЕ СУКИ -->>
-                         
