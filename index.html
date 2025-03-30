@@ -65,19 +65,19 @@
             })
         }).addTo(map);
 
-        let userMarker = null; 
+        let userMarker = null;
 
         function updateLocation(position) {
             const userLocation = L.latLng(position.coords.latitude, position.coords.longitude);
             map.setView(userLocation, 16);
 
             if (userMarker) {
-                userMarker.setLatLng(userLocation); 
+                userMarker.setLatLng(userLocation);
             } else {
                 userMarker = L.marker(userLocation).addTo(map).bindPopup("Вы здесь!").openPopup();
             }
 
-            checkHexVisit(userLocation); 
+            checkHexVisit(userLocation);
         }
 
         function checkHexVisit(latlng) {
@@ -103,8 +103,7 @@
             } else {
                 alert("Геолокация не поддерживается этим устройством.");
             }
-        }, 3000);  
-
+        }, 3000);
     </script>
 </body>
 </html>
