@@ -65,20 +65,19 @@
             })
         }).addTo(map);
 
-        let userMarker = null;  
+        let userMarker = null; 
 
         function updateLocation(position) {
             const userLocation = L.latLng(position.coords.latitude, position.coords.longitude);
             map.setView(userLocation, 16);
 
-
             if (userMarker) {
-                map.removeLayer(userMarker);
+                userMarker.setLatLng(userLocation); 
+            } else {
+                userMarker = L.marker(userLocation).addTo(map).bindPopup("Вы здесь!").openPopup();
             }
 
-            userMarker = L.marker(userLocation).addTo(map).bindPopup("Вы здесь!").openPopup();
-
-            checkHexVisit(userLocation);
+            checkHexVisit(userLocation); 
         }
 
         function checkHexVisit(latlng) {
@@ -96,7 +95,6 @@
             });
         }
 
-       
         setInterval(() => {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(updateLocation, (error) => {
@@ -105,7 +103,7 @@
             } else {
                 alert("Геолокация не поддерживается этим устройством.");
             }
-        }, 5000);  
+        }, 3000);  
 
     </script>
 </body>
